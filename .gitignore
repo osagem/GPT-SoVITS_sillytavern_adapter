@@ -21,7 +21,8 @@ dist/
 Thumbs.db
 .vscode
 
-# personal files
+# personal/runtime files
 voice/*
+output/*
 models_local.json
 

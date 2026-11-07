@@ -1,100 +1,82 @@
-# GPT-SoVITS Sillytavern驱动器
+# GPT-SoVITS SillyTavern Adapter
 
-## 项目功能
-主要目的是解决sillytavern无法使用最新版本的痛点（主要还是GPT-SoVITSv2pro和proplus的模型很多，而且效果相对v2还好不少）
+SillyTavern 与 GPT-SoVITS 之间的 TTS 中间服务。本次修改重点适配 GPT-SoVITS v5 项目的 Gradio 推理 WebUI，并兼容 SillyTavern 的 `GPT-SoVITS-Adapter` Provider。
 
-## 项目亮点
-为什么要写这个呢...
+## 本次修改内容
 
-该项目采用中间件的思想，对sillytavern发送TTS的包进行截获修改，然后转发给后端GPT-SoVITS
+### GPT-SoVITS v5 / Gradio 兼容
 
-方便快捷，与GPT-SoVITS本体解耦，可以随着GPT-SoVITS的版本更新而不需要重新配置。
+- 支持 `GPT_SoVITS/inference_webui.py` 启动的 Gradio 服务，默认地址为 `http://127.0.0.1:9872`。
+- 使用 `gradio_client 1.3.0` 调用 `/get_tts_wav`，按当前 WebUI 源码构造 19 个位置参数。
+- 完成推理语言、切句方式、采样参数、参考音频和参考文本的映射。
+- 下载并校验 Gradio 返回的 WAV 音频，不再把 Gradio 当作 FastAPI `/tts` 服务调用。
+- 保留 `api_v2` 后端模式，可连接独立启动的 `api_v2.py` 服务。
 
-提供多个hook节点，可以对tts发送的数据进行预处理，并且对GPT-SoVITS返回的数据进行后处理。
+### SillyTavern 兼容
 
-譬如自带的翻译插件，让GPT-SoVITS可以采用训练时的语言文本进行阅读，减小违和感，增加沉浸感。
+- 支持 `GPT-SoVITS-Adapter` 使用 `target_voice` 指定角色音色。
+- 保留旧请求的 `ref_audio_path` 处理方式。
+- 将 `media_type=auto` 转换为 WAV；Gradio 模式统一返回完整 WAV。
+- 保持 `POST /`、`POST /tts`、`POST /srt` 和 `GET /speakers` 接口。
+- SillyTavern Provider Endpoint 仍指向中间服务，而不是直接指向 GPT-SoVITS WebUI。
 
-项目基本上全注释了，想魔改或者自己改点东西的可以用hook，也可以自己看对应的位置魔改。
+### 稳定性与问题修复
 
+- 支持 Gradio 模式下切换 GPT/SoVITS 权重，并串行化切换权重与合成过程，避免并发请求串用角色模型。
+- 权重切换失败时中止合成，不再继续使用错误模型。
+- api_v2 模式保留流式字节转发，并传递真实音频 MIME 和上游错误状态。
+- 修复 `/srt` 预处理缺少 `await` 的问题。
+- 修复参考音频扩展名错误覆盖输出格式的问题。
+- 缺少同名参考文本时返回明确错误，不再使用角色名冒充参考文本。
+- 修复 GPT-SoVITS 嵌入式 Python 启动时误加载 v5 项目 `config.py`、找不到适配器模块的问题。
+- 新增 `run.bat`，可直接使用 GPT-SoVITS v5 自带 Python 启动中间服务。
+- 新增协议、路由、错误处理和并发回归测试，目前共 23 项。
 
-## 快速开始
-视频教程：[占位符]
+## 启动方法
 
-本项目需要Python3.8及以上环境运行（你都能跑GPT-SoVITS了，用他给的python环境即可）
+1. 保持 GPT-SoVITS Gradio WebUI 运行在 `http://127.0.0.1:9872`。
+2. 在 `voice` 目录放置角色参考音频和同名 UTF-8 文本，例如：
 
-首先配置config.py的内容，填入你自己的GPT-SoVITS后端地址。
-
-然后修改当中的目录设置（可选，主要还是看你的参考音频打算放哪，为了避免某些系统不支持，尽量保持默认或者选择英文）
-
-目录设置默认为voice，首次启动后，你可以在你的运行目录看到voice文件夹自动创建
-
-向其放入对应的参考音频和参考文本即可。参考文本为同名文本文档。
-譬如放入anno.wav,anno.txt
-
-程序会自动将其解释为参考音频和参考文本。
-
-GPT-SoVITS允许不添加参考文本，但是效果会差很多，建议这里还是给出参考文本。
-
-然后在models.json中填入你的GPT和SoVITS文件路径即可。语言可填可不填，如果你是采用的动漫角色语音，一般是ja（日语），否则是zh（中文）
-
-参考样例：
-
-```json
-{
-    "anno": {
-        "gpt": "D:/GPT-SoVITS/GPT_weights_v2ProPlus/anno-e15.ckpt",
-        "sovits": "D:/GPT-SoVITS/SoVITS_weights_v2ProPlus/anno_e8_s6016.pth",
-        "prompt_lang": "ja"
-    }
-}
+```text
+voice/anno.wav
+voice/anno.txt
 ```
 
-你要真不会填建议问ai，把你的东西给他，让ai帮你写了再回来，json比较坑的就是容易忘逗号了。到时候考虑改成toml。
+参考音频应为 3–10 秒，文本内容应与参考音频实际语音一致。
 
-这样本地就配置好了。
+3. 双击 `run.bat`，或在项目目录执行：
 
-默认翻译是关闭的，如果需要打开，则需要配置硅基流动的api key后才可正常使用。
+```bat
+"H:\ai\GPT-Sovits\GPT-SoVITS-v5-20261006nvidia50x0\runtime\python.exe" -s adapter.py
+```
 
-只要不是大面积翻译，默认的14B已经很够用了。而且可以用很久很久。
+中间服务默认监听 `http://127.0.0.1:9881`。如使用其他安装路径，请修改 `run.bat` 中的 Python 路径。
 
+4. 在 SillyTavern 中选择 `GPT-SoVITS-Adapter`，Provider Endpoint 填写：
 
-接下来来到sillytavern，找到拓展页面（如果你没装稀奇古怪的各类插件，是从右往左的第三个，笑脸左边那个方块跺）
-找到TTS，点击进去
-
-服务提供商选择GPT-SoVITS-V2(Unofficial)
-
-勾选已启用
-
-在下边找到Provider Endpoint：
-
-填入程序监听的地址，如果你是自己搭在本地的，并且没有修改端口（如果你不知道什么是端口，那么就没修改）
-
-填入
-
+```text
 http://127.0.0.1:9881
+```
 
-即可。
+然后刷新并获取可用声音，为角色配置音色。
 
-点击下边的Available Voice，获取角色可用语音数据（其实就是看你的models.json和voice文件夹）
+## 配置
 
-在上边选择卡片的说话人即可配置成功。
+`config.py` 默认使用：
 
-然后就可以听到ai的话啦。
+```python
+BACKEND_MODE = "gradio"
+API_V2_URL = "http://127.0.0.1:9872"
+```
 
+如需连接独立 `api_v2.py` 服务，可将 `BACKEND_MODE` 改为 `api_v2`，并将地址改为对应服务地址，通常为 `http://127.0.0.1:9880`。
 
-## 插件配置
-其实插件很好配置，填入硅基流动的api key就差不多了
+角色权重映射仍通过 `models.json` 或本地 `models_local.json` 配置；空配置表示沿用 WebUI 当前加载的模型。
 
-~~但考虑到amily2都有人不会用~~
+## 测试
 
+```bat
+python -m unittest discover -s tests -v
+```
 
-## TODO LIST
-- [ ] 添加更多 hook 节点
-- [ ] 兼容 GPT-SoVITS v3 和 v4
-- [ ] 添加更多插件
-- [ ] 彻底优化 SillyTavern 官方 API
-- [ ] 配置改为 TOML 亲民化
-
-
-
-
+测试使用模拟后端，不依赖 GPU。真实 Gradio 合成与 SillyTavern 播放仍需在运行环境中进行联调。

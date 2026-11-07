@@ -1,6 +1,14 @@
 
-# 后端地址 用于让适配器请求后端API
-API_V2_URL = "http://127.0.0.1:9880"
+# 后端模式：gradio = inference_webui.py；api_v2 = api_v2.py
+BACKEND_MODE = "gradio"
+
+# 后端地址（保留旧变量名以兼容现有配置）
+# 当前 Gradio WebUI 默认 9872；api_v2 通常为 http://127.0.0.1:9880
+API_V2_URL = "http://127.0.0.1:9872"
+
+# Gradio 推理加速开关；如运行环境不支持可关闭
+GRADIO_USE_CUDA_GRAPH = True
+GRADIO_USE_FLASH_ATTENTION = True
 
 # 调试模式
 DEBUG_MODE = False
